@@ -272,6 +272,8 @@ void draw()
     if(mouseX>550 && mouseX <610 && mouseY>140 && mouseY <170)
     {
       render_pos = 200;
+      cur_det = 50;
+      pre_det = 50;
       println("reset position");
       delay(100);
     }

@@ -1,7 +1,5 @@
 import socket
 import math
-import wave
-import struct
 import random
 import numpy as np
 
