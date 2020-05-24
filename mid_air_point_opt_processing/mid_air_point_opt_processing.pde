@@ -1,9 +1,14 @@
 import processing.net.*; 
 import processing.serial.*;
-Serial arduino;
-Client myClient;
+Serial arduino;  // serial connection
+Client myClient; // server connection
 
-// Basic render parameters
+// ===== Just for you to try out parameters without a python backend server =====
+// Turn the parameter to false, you can render and try out
+// When the parameter is true, it is expecting a ready server
+boolean if_connect_python = true;
+
+//  ===== Basic render parameters =====
 int top_bar = 200;
 int low_bar = 550;
 int low_bar_height = 60;
@@ -20,7 +25,7 @@ int cur_det = 50;     // The current detecting distance (from Arduino)
 int pre_det = 50;     // The previous detecting destance
 int dx = 0;           // cur_det - pre_det ---> diff of x
 int render_pos = 200; // This is the current y position of the cursor. It starts from 200 (top).
-float dx_gain = 10.7; // ***** Optimizing parameter: the gain function *****
+float dx_gain = 10.8; // ***** Optimizing parameter: the gain function *****
 int direction = -1;   // Direction remains -1
 String readin;        // It takes in the detection from Arduino
 int sample_times = 3; // Every iteration, we take 3 trials into account
@@ -74,39 +79,39 @@ int motor_target_degree = 56;       // **** Optimizing target: the motor target 
 int wait_for_return_counter = 0;    // Once an iteration starts (read the input from python), we start timing
 boolean wait_for_return = false;
 
-// ===== Just for you to try out parameters without a python backend server =====
-// Turn the parameter to false, you can render and try out
-// When the parameter is true, it is expecting a ready server
-boolean if_connect_python = true;
-
 void setup() 
 {
   size(800, 800);
-  // Load the shape
+  // Just print out all the serial
   println ("<START>");
   println (Serial.list());
   println ("<END>");
+  
+  // Setting the arduino communication via serial port
   arduino = new Serial (this, "/dev/cu.usbmodem146101", 9600);
   if (if_connect_python)
-  {myClient = new Client(this, "127.0.0.1", 50007);} // Starting connection
+  {myClient = new Client(this, "127.0.0.1", 50007);} // Starting connection with python
 }
 
 void draw() 
 {
-  if (if_connect_python)
+  // Before each iteration, we read the parameters from python server
+  // And reset the system accordingly
+  if (if_connect_python)  // Only when online mode is on
   {
     if (myClient.available() > 0) 
     {
+       // read in the gain function
        dataIn = myClient.read();
        dx_gain = float(dataIn)/10; 
        print("Reset gain function: ");
        println(dx_gain);
-     
+       // read in the hit_threshold
        dataIn = myClient.read();
        hit_threshold = dataIn;
        print("Reset hit point: ");
        println(hit_threshold);
-     
+       // read in the motr degree and send to arduino 
        dataIn = myClient.read();
        motor_target_degree = dataIn;
        print("Reset motor degree: ");
@@ -114,16 +119,21 @@ void draw()
        send_to_arduino(motor_target_degree);
        delay(100);
        
+       // Now, the system pause for 1.5s
+       // Reset the position parameter while the user is not in the detecting area
        wait_for_return_counter = millis();
        wait_for_return = true;
     }
   }
+  // For the off-line mode (no server), we simply send 1 motor degree to Aruino
   else if (!sent)
   {
     send_to_arduino(motor_target_degree);
     sent = true;
   }
   
+  // When the system has waited 1.5s after receiving the parameters from python
+  // we now reset the parameters related to the cursor position, and start the iteration
   if (millis() - wait_for_return_counter > 1500 && wait_for_return)
   {
     render_pos = 200; 
@@ -132,17 +142,23 @@ void draw()
     wait_for_return = false;
   }
   
+  // Draw basic components
   background(220);
   fill(0,0,0);
   textSize(20);
+  
+  // Write text:
+  // when the cursor has not reached the target bar, we show "to target" to user
   if (!reached && !wait_for_return)
   {text("to target", 300, 140);}
+  // When the cursor has reached, it should "return" to waiting line
   else if (reached && !wait_for_return)
   {text("return", 300, 140);}
+  // Before every iteration, the user should "let go and wait" for the system reset
   else
   {text("let go and wait", 300, 140);}
   
-  // Center where we will draw all the vertices
+  // Drawing the waiting bar and the target bar
   fill(255,255,255);
   if (wait_for_return)
   {fill(255,0,0);}
@@ -153,12 +169,16 @@ void draw()
   {fill(255,0,0);}
   rect(230, low_bar, 240,low_bar_height);
   
+  // Rendering a reset button
+  // In extreme cases, the cursor is out of control, leave your hand, and press this button
+  // It will reset the rendering position
   fill(255,255,255);
   rect(550,140,60,30);
   fill(0,0,0);
   text("reset",554,162);
   
-  // update the cursor position based on the value sent from Arduino
+  // Update the cursor position 
+  // it is based on the value sent from Arduino
   if (!wait_for_return)
   {
     if (arduino.available()>0)
@@ -166,19 +186,22 @@ void draw()
       readin = arduino.readStringUntil('\n');
       if (readin != null)
       {
-        cur_det = int(float(readin));
-        dx = cur_det - pre_det;
-        render_pos += int(dx_gain * dx * direction);
-      
+        cur_det = int(float(readin)); // read the distance
+        dx = cur_det - pre_det;       // compute the dx
+        render_pos += int(dx_gain * dx * direction);  // the position of the cursor will be updated based on the gain* dx
         pre_det = cur_det;
       }
     }
   }
   fill(0,0,0);
-  rect(230,render_pos,240,5);
+  rect(230,render_pos,240,5);  // Now we draw the cursor
   
+  // "if (answered)" means the iteration hasn't been done
+  // We handle if the cursor arrives the target, reached the target, and returning the waiting line 
   if (answered)
   {
+    // When the distance between the cursor and the target bar < hit_threshold
+    // We generate the haptic feedback
     distance_to_target = low_bar - render_pos;
     if ((distance_to_target < hit_threshold) && !hit)
     {
@@ -190,56 +213,63 @@ void draw()
     // Check if the cursor arrives/leaves the waiting line
     if (render_pos  < top_bar + top_bar_height)  // When the cursor reaches waiting line
     {
-      on_waitline = true;  // modify the status so we know it's on waiting line
+      on_waitline = true;  // modify the status so we know it's on waiting line right now
       reached = false;     // also, reached turns to false
     }
     else  // if the cursor leaves the waiting line
-    {on_waitline = false;}
+    {on_waitline = false;} // marks it as false
     if (prev_on_waitline && !on_waitline) // this means, the cursor just leaves the waiting line
     {
       moving_timer = millis();     // start counting time
       counting = true;             // also turn the counting flag as true
     }
   
-    // Update the status based on low bar
+    // Update the status based on target bar
     // Check if the cursor arrives/leaves the target bar
     if (render_pos > low_bar && render_pos < low_bar + low_bar_height) // now it's on target
     {on_target = true;}
     else    // now it's not on target
     {on_target = false;}
   
-    if (!prev_on_target && on_target)      // which means it just arrives the target. We start counting
+    if (!prev_on_target && on_target)      // It just arrives the target. We start counting
     {target_timer = millis();}
-    else if (prev_on_target && on_target)  // if it remains on target. we check if this has last for more than 500 ms
+    else if (prev_on_target && on_target)  // If it remains on target. we check if this has last for more than reach_threshold
     {
       if (millis() - target_timer > reach_threshold)
-      {reached = true;}    // Now, we change the overall status into reached. the cursor can return
+      {reached = true;}    // Now, we change the overall status into reached. The cursor should return
     }
   
-    // If the cursor finishes a task and return, we stop counting time and print out
+    // If the cursor finishes a task and returns, we stop counting time and print out
     if (prev_reached && !reached && counting)
     {
       task_time = millis() - moving_timer;
-      tasks_time[completion_count] = task_time;
+      tasks_time[completion_count] = task_time;  // record the completion time of this trial
       counting = false;
       hit = false;
+      
+      // If we sample enough, one iteration is done. Now, move onto gather user's feedback
       if (completion_count==sample_times-1)
       { 
         println("completing one iteration ");
         completion_count = 0;
         answered = false;
       }
-      else
+      else  // If not, continuing a new task
       {completion_count += 1;}
     }
   }
   
+  // Here we handle special cases that the task can not be completed
+  // It's usually due to a bad gain function. 
+  // When the user cannot finish a trial within 6 seconds, we give up the whole iteration
+  // Set all the tasks_time[] to bad values and the user's rating to a bad value
   if (counting &&  (millis() - moving_timer> 6000))
   {
     println("task failed");
     for (int count = 0; count< sample_times; count += 1)
-    {tasks_time[count] = 6500;}
-    user_rating = 1;
+    {tasks_time[count] = 6500;}    // Giving bad scores
+    user_rating = 1;               // Giving bad scores 
+    // reset the parameters and wait for a new iteration
     completion_count = 0;
     ready_to_send_py = true;
     counting = false;

@@ -16,4 +16,10 @@ Arduino a fairly recent version. <br>
 Required packages installation: <br>
 pip3 install socket, numpy, bayesian-optimization<br>
 
-Put the mid_air_point_opt_processing folder under Processing folder. Put the mid_air_point_opt_arduino under Arduino folder. Upload the Arduino file onto your board. Then, execute mid_air_point_opt.py first, then mid_air_point_opt_processing.pde. 
+Put the mid_air_point_opt_processing folder under Processing folder, and the mid_air_point_opt_arduino under Arduino folder. <br>
+Upload the Arduino file onto your board. Execute mid_air_point_opt.py first, then mid_air_point_opt_processing.pde. 
+<br>
+
+In the processing file, this line <br>
+boolean if_connect_python = true;<br>
+Change true to false allows off-line testing.

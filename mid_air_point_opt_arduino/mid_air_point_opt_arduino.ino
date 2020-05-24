@@ -2,12 +2,13 @@
 
 Servo myservo;  // create servo object to control a servo
 
+// basic pint setup
 const int trigPin = 9;
 const int echoPin = 10;
 const int servoPin = 11;
 const int ledPin = 13;
 
-// defines variables
+// defines variables for distance detection
 long duration;
 float distance;
 
@@ -41,7 +42,7 @@ void loop()
   if (Serial.available()) 
   {
     charin = Serial.read();
-    if (charin == 'b')
+    if (charin == 'b') // When the message begin with b, we update the motor target position
     {
       value_sum = 0;
       received = true;
@@ -53,22 +54,23 @@ void loop()
           value_sum *= 10;
           valuein = charin - '0';
           value_sum += valuein;
-          delay(10);
+          delay(10);   // Must have this delay to ensure the reading are correct!
         }
         else
         {break;}
       }
     }
-    else if (charin == 'h')
+    else if (charin == 'h')  // When the message is h, generate haptic feedback
     {hit();}
   }
-  if (received)
+  if (received) // now, update the motor position
   {
     servo_target = value_sum; 
     received = false;
   }
 
-  
+  // Start detecting
+  // removing the first item in moving average filter's window
   sum = sum - readings[idx];
   delay(10);
   // ultrasound trig
@@ -81,7 +83,7 @@ void loop()
   // receiving and calculate distance
   duration = pulseIn(echoPin, HIGH);
   distance= duration*0.034/2;
-  // remove burst
+  // remove outliers
   if (distance > 50)
   {distance = 50;}
   else if (distance < 0)
@@ -95,7 +97,7 @@ void loop()
   //Serial.print(distance);
   //Serial.print(" Averaged: ");
   Serial.println(averaged);
-  delay(30);
+  delay(30); // must have this delay, or the processing part will crash!
 }
 
 void hit()

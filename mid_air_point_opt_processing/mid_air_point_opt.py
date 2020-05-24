@@ -13,13 +13,11 @@ def optimize_function(gain, h_point, m_deg):
     global iteration_count
     global sample_times
 
-    # Send the activation point to processing
+    # Send the parameters to processing 
     send_data = bytes([int(gain)])
     conn.sendall(send_data)
-    # Send the sound point to processing
     send_data = bytes([int(h_point)])
     conn.sendall(send_data)
-
     send_data = bytes([int(m_deg)])
     conn.sendall(send_data)
     
@@ -34,11 +32,18 @@ def optimize_function(gain, h_point, m_deg):
             rec_count += 1
     #print (received_all)
     received_all = np.array(received_all)
+
+    # The received data 0-2 is the completion times, received data 3 is the user feedback
+    # The final value will be the average of the completion times
+    # plus bonus/penalty based on user's feedback
     final_value = np.average(received_all[0:3])
+    # We give some bonus (shorten the averaged completion time) if the user rate 5 or 4
     if (received_all[3] == 5):
         final_value -= 1000
     elif (received_all[3] == 4):
         final_value -= 500
+    # On the other hand, we give penalty (prolong the averaged completion time) 
+    # if the user rate 1 - 3
     elif (received_all[3] == 3):
         final_value += 500
     elif (received_all[3] == 2):
@@ -46,11 +51,10 @@ def optimize_function(gain, h_point, m_deg):
     elif (received_all[3] == 1):
         final_value += 2000
 
-    final_value *= -1 #### Because we want to "OPTIMIZE" the value, so make it negtive
+    final_value *= -1 # Because we want to "OPTIMIZE" the value, so make it negtive
 
+    # You may print the final value by uncomment this line
     #print("final is %.2f" %final_value)
-    
-    #print("End of one iteration")
     return final_value 
     
 
@@ -69,7 +73,7 @@ conn, addr = s.accept()
 # Now the connection is done
 print('Connected by', addr)
 
-# You may change these two values for trial different results
+# Every iteration will require 4 data from processing
 sample_times = 4  
 
 iteration_count = 0
