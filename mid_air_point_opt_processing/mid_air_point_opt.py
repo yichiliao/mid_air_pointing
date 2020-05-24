@@ -30,13 +30,8 @@ def optimize_function(gain, h_point, m_deg):
         data = conn.recv(1024)
         if data: 
             received = round(float(data.decode("utf-8")) , 0)
-            #print ('Temporal difference is %.2f' %t_diff)
             received_all.append(received)
             rec_count += 1
-    # Don't take the last data point into account.
-    # Because in some cases, the button is activated before the sound being played
-    # In this case, the last data point will be without feedback (the processing is reseting itself)
-    # Hence, we just ignore one data point for more consistency.
     #print (received_all)
     received_all = np.array(received_all)
     final_value = np.average(received_all[0:3])
@@ -75,7 +70,7 @@ conn, addr = s.accept()
 print('Connected by', addr)
 
 # You may change these two values for trial different results
-sample_times = 4  # How many presses will be taken into account per iteration
+sample_times = 4  
 
 iteration_count = 0
 
@@ -93,8 +88,8 @@ optimizer = BayesianOptimization(
 ### init_points <- How many random steps you want to do
 ### n_iter <- How many optimization steps you want to take
 optimizer.maximize(
-    init_points=10,
-    n_iter=10,
+    init_points=20,
+    n_iter=20,
 )
 
 ### Print the best

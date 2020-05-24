@@ -3,6 +3,7 @@ import processing.serial.*;
 Serial arduino;
 Client myClient;
 
+// Basic render parameters
 int top_bar = 200;
 int low_bar = 550;
 int low_bar_height = 60;
@@ -12,49 +13,71 @@ int answer_begin_y = 670;
 int answer_width = 40;
 int answer_interval = 100;
 
+// ===== Parameters for determining the rendering cursor position ===== 
+// and the related handling communication with Arduino
 int cur_time = millis();
-int cur_det = 50;
-int pre_det = 50;
-int dx = 0;
+int cur_det = 50;     // The current detecting distance (from Arduino)
+int pre_det = 50;     // The previous detecting destance
+int dx = 0;           // cur_det - pre_det ---> diff of x
+int render_pos = 200; // This is the current y position of the cursor. It starts from 200 (top).
+float dx_gain = 10.7; // ***** Optimizing parameter: the gain function *****
+int direction = -1;   // Direction remains -1
+String readin;        // It takes in the detection from Arduino
+int sample_times = 3; // Every iteration, we take 3 trials into account
 
-int render_pos = 200;
-float dx_gain = 10.2;     // **** Optimizing target
-int direction = -1;
-String readin;
+// ===== Paremeters for handling if the cursor reaches target ===== 
+// The condition of reach a target: 
+// the cursor has to go inside the target bar and remains more than (reach_threshold) ms
+boolean on_target = false;       // If the cursor is on target bar right now
+boolean prev_on_target = false;  // It the cursor is on target bar at previous timestamp
+boolean reached = false;         // If the cursor is on target, and remains > reach_threshold ms, it has reached
+boolean prev_reached = false;    // If the cursor reached the target at previous timestamp
+int target_timer = 0;            // When the cursor first arrives the target bar (!pre_on_target && on_target), start counting time
+int reach_threshold = 500;       // The threshold for detecting if it has reached (unit: ms)
 
-boolean sent = false;
-boolean on_target = false;
-boolean prev_on_target = false;
-boolean reached = false;
-boolean prev_reached = false;
-int target_timer = 0;
-int reach_threshold = 500; // unit: ms
+// ===== Parameters related to render haptic feedback ===== 
+// The feedback will be generate before the cursor arrives the target
+// More specifically, the motor will move when it is (hit_threshold) pixels before the target bar
+int distance_to_target = 200;    // This parameter keep tracking the distance between the cursor and the target bar
+boolean hit = false;             // If the haptic cue is sent or not. It should render just once per trial
+int hit_threshold = 38;          // **** Optimizing parameter: how many pixels pior to the target zone should generate feedback
+boolean sent = false;            // When starting off-line mode (no server), we need to send motor degree to Arduino for just once
 
-int distance_to_target = 200;
-boolean hit = false;
-int hit_threshold = 30;   // **** Optimizing target
-int sample_times = 3;
+// ===== Parameters for handling returning the waiting line and task completion ===== 
+// After the cursor reached (arrives target + stay there for > reach_threshold), 
+// It should return to the waiting line (top bar). Once it has returned, a trial is completed. 
+// If the user completed (sample_timesthe) trials, an iteration is done. 
+boolean on_waitline = false;        // If the cursor is on the waiting line right now
+boolean prev_on_waitline = false;   // If the cursor is on the waiting line at previous timestamp
+int moving_timer = 0;               // We record the timestamp as the cursor leaves the waiting line
+boolean counting = false;           // When the cursor leaves the waiting line, it start counting
+int task_time = 0;                  // The completion time of one trial (the completion timestamp - moving_timer)
+int[] tasks_time = {0,0,0};         // The overall completion time of all trials. The length is 3 because current sample_times = 3 
+int completion_count = 0;           // How many completed trials so far for this iteration.
 
-boolean on_waitline = false;
-boolean prev_on_waitline = false;
-int moving_timer = 0;
-boolean counting = false;
-int task_time = 0;
-int[] tasks_time = {0,0,0}; 
+// ===== Parameters for handling rating feedback as an iteration is done =====
+// User has to rate the feedback by 1, 2, 3, 4, 5. 
+// 1 is the worst, 5 is the best
+boolean answered = true;            // If the user has answered the question (rate feedback) or not
+int user_rating = 0;                // The user's rating
+boolean ready_to_send_py = false;   // If the user has rated, now we are ready to send everything to python server      
 
-int completion_count = 0;
+// ===== Parameters for reading the parameters sent from python server =====
+// Before every iteration, the python server sends the parameters to processing. 
+// Parameters including: dx_gain, hit_threshold, and motor_target_degree (the level of servo motor feedback)
+int dataIn = 0;                     // A parameter for reading the int from python
+int motor_target_degree = 56;       // **** Optimizing target: the motor target degree when it is activated
 
-boolean answered = true;
-int user_rating = 0;
-boolean ready_to_send_py = false;
-float final_value = 0.0;
-
-int dataIn = 0;
-int motor_target_degree = 0;// **** Optimizing target
-
-boolean if_connect_python = true;
-int wait_for_return_counter = 0;
+// ===== Parameters for pausing the system for 1.5s after an iteration starts =====
+// Why we need this? Because we need to reset the current detection and current cursor position from time to time
+// The easiest way is asking the user to leave the sensor's detecting range and reset the parameters before every iteration
+int wait_for_return_counter = 0;    // Once an iteration starts (read the input from python), we start timing
 boolean wait_for_return = false;
+
+// ===== Just for you to try out parameters without a python backend server =====
+// Turn the parameter to false, you can render and try out
+// When the parameter is true, it is expecting a ready server
+boolean if_connect_python = true;
 
 void setup() 
 {
@@ -81,7 +104,7 @@ void draw()
      
        dataIn = myClient.read();
        hit_threshold = dataIn;
-       print("Reset sound point: ");
+       print("Reset hit point: ");
        println(hit_threshold);
      
        dataIn = myClient.read();
@@ -95,6 +118,12 @@ void draw()
        wait_for_return = true;
     }
   }
+  else if (!sent)
+  {
+    send_to_arduino(motor_target_degree);
+    sent = true;
+  }
+  
   if (millis() - wait_for_return_counter > 1500 && wait_for_return)
   {
     render_pos = 200; 
@@ -194,7 +223,6 @@ void draw()
       tasks_time[completion_count] = task_time;
       counting = false;
       hit = false;
-    
       if (completion_count==sample_times-1)
       { 
         println("completing one iteration ");
@@ -215,6 +243,7 @@ void draw()
     completion_count = 0;
     ready_to_send_py = true;
     counting = false;
+    hit = false;
   }
   
   if (!answered)
